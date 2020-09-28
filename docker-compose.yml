@@ -1,0 +1,11 @@
+version: '3.8'
+
+
+services:
+  php:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - '.:/var/www/app'
+    container_name: test-php

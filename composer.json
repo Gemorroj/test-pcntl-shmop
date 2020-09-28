@@ -1,0 +1,11 @@
+{
+  "type": "project",
+  "license": "MIT",
+  "name": "gemorroj/test-pcntl-shmop",
+  "description": "test pcntl + shmop",
+  "require": {
+    "php": "^7.4",
+    "ext-pcntl": "*",
+    "ext-shmop": "*"
+  }
+}
