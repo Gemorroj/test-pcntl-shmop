@@ -4,7 +4,7 @@
   "name": "gemorroj/test-pcntl-shmop",
   "description": "test pcntl + shmop",
   "require": {
-    "php": "^7.4",
+    "php": ">=8.0",
     "ext-pcntl": "*",
     "ext-shmop": "*"
   }

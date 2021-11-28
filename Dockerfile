@@ -1,4 +1,4 @@
-FROM php:7.4-fpm-alpine
+FROM php:8.0-fpm-alpine
 
 RUN set -xe \
     && apk update \
@@ -17,6 +17,10 @@ RUN set -xe \
     && apk del --no-cache .build-deps \
     && rm -rf /tmp/* /var/cache/apk/*
 
+# Composer
+RUN set -xe \
+    && curl -L -o /composer.phar https://github.com/composer/composer/releases/download/2.1.12/composer.phar \
+    && chmod 755 /composer.phar
 
 # utilites
 RUN set -xe \

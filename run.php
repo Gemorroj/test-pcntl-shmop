@@ -1,20 +1,51 @@
 <?php
 
-function forkProcess(array $processes, callable $callback, int $memorySizePerProcess = 1024): void
+/**
+ * @param callable[] $processes
+ * @param callable $callback
+ * @param int $memorySizeInBytesPerProcess
+ * @throws \RuntimeException
+ */
+function forkProcess(array $processes, callable $callback, int $memorySizeInBytesPerProcess = 1024): void
 {
+    /**
+     * @param \Shmop $sharedMemoryMonitor
+     * @param \Shmop[] $sharedMemoryIds
+     */
+    $cleanMemory = static function (\Shmop $sharedMemoryMonitor, array $sharedMemoryIds): void {
+        \shmop_delete($sharedMemoryMonitor);
+        foreach ($sharedMemoryIds as $value) {
+            \shmop_delete($value);
+        }
+    };
     $l = \count($processes);
 
     $sharedMemoryMonitor = \shmop_open(\ftok(__FILE__, \chr(0)), 'c', 0644, $l);
+    if (!$sharedMemoryMonitor) {
+        throw new \RuntimeException('Can\'t open the shared memory.');
+    }
     $sharedMemoryIds = [];
     for ($i = 1; $i <= $l; $i++) {
-        $sharedMemoryIds[$i] = \shmop_open(\ftok(__FILE__, \chr($i)), 'c', 0644, $memorySizePerProcess);
+        $sharedMemoryIds[$i] = \shmop_open(\ftok(__FILE__, \chr($i)), 'c', 0644, $memorySizeInBytesPerProcess);
+        if (!$sharedMemoryIds[$i]) {
+            unset($sharedMemoryIds[$i]);
+            $cleanMemory($sharedMemoryMonitor, $sharedMemoryIds);
+            throw new \RuntimeException('Can\'t open the shared memory.');
+        }
 
         $pid = \pcntl_fork();
         if (!$pid) {
             if ($i === 1) {
                 \usleep(100000);
             }
-            \shmop_write($sharedMemoryIds[$i], ($processes[$i - 1])(), 0);
+
+            $data = ($processes[$i - 1])();
+            $dataLength = \strlen($data);
+            $wroteLength = \shmop_write($sharedMemoryIds[$i], $data, 0);
+            if ($wroteLength < $dataLength) {
+                $cleanMemory($sharedMemoryMonitor, $sharedMemoryIds);
+                throw new \RuntimeException(\sprintf('Can\'t write the data to shared memory. Data length is %d, wrote length is %d.', $wroteLength, $dataLength));
+            }
             \shmop_write($sharedMemoryMonitor, '1', $i - 1);
             exit($i);
         }
@@ -25,8 +56,8 @@ function forkProcess(array $processes, callable $callback, int $memorySizePerPro
         if (\shmop_read($sharedMemoryMonitor, 0, $l) === $plug) {
             $result = [];
             foreach ($sharedMemoryIds as $key => $value) {
-                $result[$key - 1] = \shmop_read($sharedMemoryIds[$key], 0, $memorySizePerProcess);
-                \shmop_delete($sharedMemoryIds[$key]);
+                $result[$key - 1] = \shmop_read($value, 0, $memorySizeInBytesPerProcess);
+                \shmop_delete($value);
             }
             \shmop_delete($sharedMemoryMonitor);
             $callback($result);
@@ -37,24 +68,24 @@ function forkProcess(array $processes, callable $callback, int $memorySizePerPro
 
 // Define 2 functions to run as its own process.
 $processes = [
-    static function () {
+    static function (): string {
         // Whatever you need goes here...
         // If you need the results, return its value.
-        // Eg: Long running proccess 1
+        // Eg: Long running process 1
         \sleep(6);
         return 'Hello ';
     },
-    static function () {
+    static function (): string {
         // Whatever you need goes here...
         // If you need the results, return its value.
         // Eg:
-        // Eg: Long running proccess 2
+        // Eg: Long running process 2
         \sleep(5);
         return 'World!';
     }
 ];
 
-$callback = static function (array $result) {
+$callback = static function (array $result): void {
     // $results is an array of return values...
     // $result[0] for $process[0] &
     // $result[1] for $process[1] &
@@ -67,4 +98,5 @@ $callback = static function (array $result) {
 
 forkProcess($processes, $callback);
 
-echo "Code after fork\n";
+echo "Done!\n";
+echo \round(\memory_get_peak_usage() / 1024 / 1024, 2) . "MB is used\n";
