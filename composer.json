@@ -6,6 +6,7 @@
   "require": {
     "php": ">=8.0",
     "ext-pcntl": "*",
-    "ext-shmop": "*"
+    "ext-shmop": "*",
+    "ext-sysvshm": "*"
   }
 }

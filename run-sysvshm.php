@@ -12,12 +12,12 @@
 function forkProcess(array $processes, callable $callback, int $memorySizeInBytesPerProcess = 1024): void
 {
     /**
-     * @param \Shmop[] $sharedMemoryIds
+     * @param \SysvSharedMemory[] $sharedMemoryIds
      */
-    $cleanMemory = static function (\Shmop $sharedMemoryMonitor, array $sharedMemoryIds): void {
-        \shmop_delete($sharedMemoryMonitor);
+    $cleanMemory = static function (array $sharedMemoryIds): void {
         foreach ($sharedMemoryIds as $value) {
-            \shmop_delete($value);
+            \shm_remove($value);
+            \shm_detach($value);
         }
     };
     $l = \count($processes);
@@ -28,64 +28,55 @@ function forkProcess(array $processes, callable $callback, int $memorySizeInByte
         throw new \RuntimeException('Can\'t create the temp file.');
     }
 
-    $monitorId = \ftok($tmpFile, \chr(0));
-    if (-1 === $monitorId) {
-        throw new \RuntimeException('Can\'t get the System V IPC key.');
-    }
-    $sharedMemoryMonitor = \shmop_open($monitorId, 'n', 0644, $l);
-    if (!$sharedMemoryMonitor) {
-        throw new \RuntimeException('Can\'t open the shared memory.');
-    }
-    /** @var \Shmop[] $sharedMemoryIds */
+    /** @var \SysvSharedMemory[] $sharedMemoryIds */
     $sharedMemoryIds = [];
-    for ($i = 1; $i <= $l; $i++) {
+    for ($i = 0; $i < $l; $i++) {
         $processId = \ftok($tmpFile, \chr($i));
         if (-1 === $processId) {
-            $cleanMemory($sharedMemoryMonitor, $sharedMemoryIds);
+            $cleanMemory($sharedMemoryIds);
             throw new \RuntimeException('Can\'t get the System V IPC key.');
         }
-        $sharedMemoryIds[$i] = \shmop_open($processId, 'n', 0644, $memorySizeInBytesPerProcess);
+        $sharedMemoryIds[$i] = \shm_attach($processId, $memorySizeInBytesPerProcess, 0644);
         if (!$sharedMemoryIds[$i]) {
             unset($sharedMemoryIds[$i]);
-            $cleanMemory($sharedMemoryMonitor, $sharedMemoryIds);
+            $cleanMemory($sharedMemoryIds);
             throw new \RuntimeException('Can\'t open the shared memory.');
         }
 
         $pid = \pcntl_fork();
         if (-1 === $pid) {
-            $cleanMemory($sharedMemoryMonitor, $sharedMemoryIds);
+            $cleanMemory($sharedMemoryIds);
             throw new \RuntimeException('Can\'t open the shared memory.');
         }
 
         if (!$pid) { // forked process
-            if (1 === $i) { // ???
+            if (0 === $i) { // ???
                 \usleep(10000); // 0.01 sec
             }
 
-            $data = ($processes[$i - 1])();
-            $dataLength = \strlen($data);
-            $wroteLength = \shmop_write($sharedMemoryIds[$i], $data, 0);
-            if ($wroteLength < $dataLength) {
-                $cleanMemory($sharedMemoryMonitor, $sharedMemoryIds);
-                throw new \RuntimeException(\sprintf('Can\'t write the data to shared memory. Data length is %d, wrote length is %d.', $wroteLength, $dataLength));
+            $data = ($processes[$i])();
+            $wroteResult = \shm_put_var($sharedMemoryIds[$i], $i, $data); // $data must be serializable
+            if (!$wroteResult) {
+                $cleanMemory($sharedMemoryIds);
+                throw new \RuntimeException('Can\'t write the data to shared memory.');
             }
-            \shmop_write($sharedMemoryMonitor, '1', $i - 1);
-            exit(0);
+            exit($i); // set number of process
         }
     }
 
-    $plug = \str_repeat('1', $l);
+    $results = [];
     while (-1 !== \pcntl_waitpid(0, $status)) {
-        if (\shmop_read($sharedMemoryMonitor, 0, $l) === $plug) {
-            $result = [];
-            foreach ($sharedMemoryIds as $key => $value) {
-                $result[$key - 1] = \shmop_read($value, 0, $memorySizeInBytesPerProcess);
-                \shmop_delete($value);
-            }
-            \shmop_delete($sharedMemoryMonitor);
-            $callback($result);
-        }
+        $key = \pcntl_wexitstatus($status); // get number of process
+        $value = $sharedMemoryIds[$key];
+
+        $results[$key] = \shm_get_var($value, $key);
+        \shm_remove_var($value, $key);
     }
+
+    \ksort($results, \SORT_NUMERIC);
+
+    $cleanMemory($sharedMemoryIds);
+    $callback($results);
 
     @\unlink($tmpFile);
 }
@@ -93,7 +84,7 @@ function forkProcess(array $processes, callable $callback, int $memorySizeInByte
 
 /**
  * functions to run as its own process.
- * functions must return string
+ * functions must return serializable data
  *
  * @var callable[] $processes
  */
@@ -115,15 +106,12 @@ $processes = [
     }
 ];
 
-/**
- * @param string[] $results
- */
 $callback = static function (array $results): void {
     \print_r($results);
 };
 
 
-forkProcess($processes, $callback, 100);
+forkProcess($processes, $callback, 1024);
 
 echo "Done!\n";
 echo \round(\memory_get_peak_usage() / 1024 / 1024, 2) . "MB is used\n";

@@ -5,6 +5,10 @@ RUN set -xe \
     && apk upgrade \
     && apk add --no-cache --virtual .build-deps $PHPIZE_DEPS \
 
+    # sysvshm
+    && docker-php-ext-install sysvshm \
+    && docker-php-ext-enable sysvshm \
+
     # shmop
     && docker-php-ext-install shmop \
     && docker-php-ext-enable shmop \
