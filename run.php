@@ -23,6 +23,7 @@ function forkProcess(array $processes, callable $callback, int $memorySizeInByte
     };
     $l = \count($processes);
 
+    // unique file to avoid race condition
     $tmpFile = \tempnam(\sys_get_temp_dir(), 'fork_');
     if (!$tmpFile) {
         throw new \RuntimeException('Can\'t create the temp file.');
@@ -51,9 +52,14 @@ function forkProcess(array $processes, callable $callback, int $memorySizeInByte
         }
 
         $pid = \pcntl_fork();
-        if (!$pid) {
-            if (1 === $i) {
-                \usleep(100000);
+        if (-1 === $pid) {
+            $cleanMemory($sharedMemoryMonitor, $sharedMemoryIds);
+            throw new \RuntimeException('Can\'t open the shared memory.');
+        }
+
+        if (!$pid) { // forked process
+            if (1 === $i) { // ???
+                \usleep(10000); // 0.01 sec
             }
 
             $data = ($processes[$i - 1])();
@@ -64,7 +70,7 @@ function forkProcess(array $processes, callable $callback, int $memorySizeInByte
                 throw new \RuntimeException(\sprintf('Can\'t write the data to shared memory. Data length is %d, wrote length is %d.', $wroteLength, $dataLength));
             }
             \shmop_write($sharedMemoryMonitor, '1', $i - 1);
-            exit($i);
+            exit(0);
         }
     }
 
@@ -85,37 +91,42 @@ function forkProcess(array $processes, callable $callback, int $memorySizeInByte
 }
 
 
-// Define 2 functions to run as its own process.
+/**
+ * functions to run as its own process.
+ * functions must return string
+ *
+ * @var callable[] $processes
+ */
 $processes = [
     static function (): string {
         // Whatever you need goes here...
         // If you need the results, return its value.
         // Eg: Long running process 1
-        \sleep(6);
+        \sleep(3);
         return 'Hello ';
     },
     static function (): string {
-        // Whatever you need goes here...
-        // If you need the results, return its value.
-        // Eg:
-        // Eg: Long running process 2
-        \sleep(5);
-        return 'World!';
+        \sleep(4);
+        return 'World';
+    },
+    static function (): string {
+        \sleep(3);
+        return '!';
     }
 ];
 
-$callback = static function (array $result): void {
-    // $results is an array of return values...
-    // $result[0] for $process[0] &
-    // $result[1] for $process[1] &
-    // Eg:
-    foreach ($result as $item) {
-        echo $item;
+/**
+ * @param string[] $results
+ */
+$callback = static function (array $results): void {
+    foreach ($results as $result) {
+        echo $result;
     }
     echo "\n";
 };
 
-forkProcess($processes, $callback);
+
+forkProcess($processes, $callback, 100);
 
 echo "Done!\n";
 echo \round(\memory_get_peak_usage() / 1024 / 1024, 2) . "MB is used\n";
