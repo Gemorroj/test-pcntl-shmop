@@ -1,9 +1,12 @@
 <?php
+/**
+ * based on https://www.php.net/manual/ru/function.pcntl-fork.php#115855
+ */
 
 /**
  * @param callable[] $processes
  * @param callable $callback
- * @param int $memorySizeInBytesPerProcess
+ * @param int $memorySizeInBytesPerProcess Memory for stored data.
  * @throws \RuntimeException
  */
 function forkProcess(array $processes, callable $callback, int $memorySizeInBytesPerProcess = 1024): void
@@ -20,13 +23,27 @@ function forkProcess(array $processes, callable $callback, int $memorySizeInByte
     };
     $l = \count($processes);
 
-    $sharedMemoryMonitor = \shmop_open(\ftok(__FILE__, \chr(0)), 'c', 0644, $l);
+    $tmpFile = \tempnam(\sys_get_temp_dir(), 'fork_');
+    if (!$tmpFile) {
+        throw new \RuntimeException('Can\'t create the temp file.');
+    }
+
+    $monitorId = \ftok($tmpFile, \chr(0));
+    if (-1 === $monitorId) {
+        throw new \RuntimeException('Can\'t get the System V IPC key.');
+    }
+    $sharedMemoryMonitor = \shmop_open($monitorId, 'n', 0644, $l);
     if (!$sharedMemoryMonitor) {
         throw new \RuntimeException('Can\'t open the shared memory.');
     }
     $sharedMemoryIds = [];
     for ($i = 1; $i <= $l; $i++) {
-        $sharedMemoryIds[$i] = \shmop_open(\ftok(__FILE__, \chr($i)), 'c', 0644, $memorySizeInBytesPerProcess);
+        $processId = \ftok($tmpFile, \chr($i));
+        if (-1 === $processId) {
+            $cleanMemory($sharedMemoryMonitor, $sharedMemoryIds);
+            throw new \RuntimeException('Can\'t get the System V IPC key.');
+        }
+        $sharedMemoryIds[$i] = \shmop_open($processId, 'n', 0644, $memorySizeInBytesPerProcess);
         if (!$sharedMemoryIds[$i]) {
             unset($sharedMemoryIds[$i]);
             $cleanMemory($sharedMemoryMonitor, $sharedMemoryIds);
@@ -35,7 +52,7 @@ function forkProcess(array $processes, callable $callback, int $memorySizeInByte
 
         $pid = \pcntl_fork();
         if (!$pid) {
-            if ($i === 1) {
+            if (1 === $i) {
                 \usleep(100000);
             }
 
@@ -52,7 +69,7 @@ function forkProcess(array $processes, callable $callback, int $memorySizeInByte
     }
 
     $plug = \str_repeat('1', $l);
-    while (\pcntl_waitpid(0, $status) !== -1) {
+    while (-1 !== \pcntl_waitpid(0, $status)) {
         if (\shmop_read($sharedMemoryMonitor, 0, $l) === $plug) {
             $result = [];
             foreach ($sharedMemoryIds as $key => $value) {
@@ -63,6 +80,8 @@ function forkProcess(array $processes, callable $callback, int $memorySizeInByte
             $callback($result);
         }
     }
+
+    @\unlink($tmpFile);
 }
 
 

@@ -8,4 +8,3 @@ services:
       dockerfile: Dockerfile
     volumes:
       - '.:/var/www/app'
-    container_name: test-php
