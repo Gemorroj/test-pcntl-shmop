@@ -4,6 +4,7 @@ Warning!
 - We must store only STRINGs or serializable data to shared memory. We can't share pure objects and other useful data...
 
 TODO:
+- test apcu instead shmop/sysvshm
 - ```php
           if (!$pid) { // forked process
             if (0 === $i) { // ???
