@@ -54,7 +54,7 @@ function forkProcess(array $processes, callable $callback, int $memorySizeInByte
         $pid = \pcntl_fork();
         if (-1 === $pid) {
             $cleanMemory($sharedMemoryMonitor, $sharedMemoryIds);
-            throw new \RuntimeException('Can\'t open the shared memory.');
+            throw new \RuntimeException('Can\'t fork the process.');
         }
 
         if (!$pid) { // forked process
@@ -90,6 +90,11 @@ function forkProcess(array $processes, callable $callback, int $memorySizeInByte
     @\unlink($tmpFile);
 }
 
+$context = \stream_context_create([
+    'http' => [
+        'user_agent' => __FILE__,
+    ],
+]);
 
 /**
  * functions to run as its own process.
@@ -98,20 +103,14 @@ function forkProcess(array $processes, callable $callback, int $memorySizeInByte
  * @var callable[] $processes
  */
 $processes = [
-    static function (): string {
-        // Whatever you need goes here...
-        // If you need the results, return its value.
-        // Eg: Long running process 1
-        \sleep(3);
-        return 'Hello ';
+    static function () use($context): string {
+        return \file_get_contents('https://httpbin.org/get?0', false, $context);
     },
-    static function (): string {
-        \sleep(4);
-        return 'World';
+    static function () use($context): string {
+        return \file_get_contents('https://httpbin.org/get?1', false, $context);
     },
-    static function (): string {
-        \sleep(3);
-        return '!';
+    static function () use($context): string {
+        return \file_get_contents('https://httpbin.org/get?2', false, $context);
     }
 ];
 
@@ -123,7 +122,7 @@ $callback = static function (array $results): void {
 };
 
 
-forkProcess($processes, $callback, 100);
+forkProcess($processes, $callback, 1024);
 
 echo "Done!\n";
 echo \round(\memory_get_peak_usage() / 1024 / 1024, 2) . "MB is used\n";

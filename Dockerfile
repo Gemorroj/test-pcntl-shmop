@@ -5,6 +5,10 @@ RUN set -xe \
     && apk upgrade \
     && apk add --no-cache --virtual .build-deps $PHPIZE_DEPS \
 
+    # APCU
+    && pecl install apcu \
+    && docker-php-ext-enable apcu \
+
     # sysvshm
     && docker-php-ext-install sysvshm \
     && docker-php-ext-enable sysvshm \

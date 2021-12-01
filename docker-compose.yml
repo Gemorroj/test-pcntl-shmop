@@ -8,3 +8,6 @@ services:
       dockerfile: Dockerfile
     volumes:
       - '.:/var/www/app'
+      - './php.ini:/usr/local/etc/php/php.ini'
+    ports:
+      - "9000:9000" # php-fpm. for apcu
