@@ -1,6 +1,7 @@
-# test-pcntl-shmop
+## Test pcntl + sysvshm/shmop/apcu
 
 Warning!
+- Usable only in cli mode (https://stackoverflow.com/a/35029409/531647)
 - We must store only STRINGs or serializable data to shared memory. We can't share pure objects and other useful data...
 
 TODO:
@@ -15,3 +16,7 @@ TODO:
 - make real project
 - add at least 3 drivers - shmop, sysvshm, apcu
 - add ext-pecl to composer.json as suggestion and add public static method "support" (it will check pcntl). it helps to add this package to require section
+
+SEE:
+- https://github.com/spatie/fork
+- https://github.com/huyanping/simple-fork-php
